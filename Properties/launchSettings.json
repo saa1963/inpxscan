@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "inpxscan": {
+      "commandName": "Project",
+      "commandLineArgs": "c:\\temp\\qq.inpx"
+    }
+  }
+}
