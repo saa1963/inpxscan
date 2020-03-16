@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 
 namespace inpxscan
@@ -15,6 +16,17 @@ namespace inpxscan
                 Console.ReadKey();
                 return;
             }
+            string scriptText;
+            using (var scriptStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("inpxscan.CreateCollectionDB_SQLite.sql"))
+            {
+                using (var sr = new StreamReader(scriptStream, Encoding.UTF8))
+                {
+                    scriptText = sr.ReadToEnd();
+                }
+            }
+
+            string newbaseName = GetNewBaseName();
+
             using (var zipArchive = ZipFile.OpenRead(args[0]))
             {
                 foreach (var entry in zipArchive.Entries)
@@ -46,6 +58,11 @@ namespace inpxscan
                 }
             }
             Console.ReadKey();
+        }
+
+        private static string GetNewBaseName()
+        {
+            throw new NotImplementedException();
         }
     }
 }
