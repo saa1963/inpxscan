@@ -1,5 +1,6 @@
 ﻿using SQLitePCL;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
@@ -53,47 +54,117 @@ namespace inpxscan
             }
 
             InsertGenres();
+            List<Books> lst = FillList(args[0]);
+            
+            raw.sqlite3_close_v2(db);
 
-            //sqlite3_stmt stmt = null;
-            //string cSql = "INSERT LibID, Title,  INTO Books VALUES ()";
-            using (var zipArchive = ZipFile.OpenRead(args[0]))
+            Console.WriteLine("Data had been loaded");
+            Console.ReadKey();
+        }
+
+        private static List<Books> FillList(string fname)
+        {
+            var rt = new List<Books>();
+            using (var zipArchive = ZipFile.OpenRead(fname))
             {
                 foreach (var entry in zipArchive.Entries)
                 {
-                    using (var stream = entry.Open())
+                    if (entry.Name.Contains(".inp"))
                     {
-                        using (var sr = new StreamReader(stream, Encoding.UTF8))
+                        using (var stream = entry.Open())
                         {
-                            string s;
-                            while ((s = sr.ReadLine()) != null)
+                            using (var sr = new StreamReader(stream, Encoding.UTF8))
                             {
-                                var mas = s.Split('\x04');
-                                var author = mas[0];
-                                var genre = mas[1];
-                                var title = mas[2];
-                                var series = mas[3];
-                                var serno = mas[4];
-                                var file = mas[5];
-                                var size = mas[6];
-                                var libid = mas[7];
-                                var del = mas[8];
-                                var ext = mas[9];
-                                var date = mas[10];
-                                var lang = mas[11];
-                                var keywords = mas[12];
+                                string s;
+                                while ((s = sr.ReadLine()) != null)
+                                {
+                                    var o = new Books();
+                                    var mas = s.Split('\x04');
+                                    var authors = mas[0].Split(':');
+                                    foreach (var a in authors)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(a))
+                                        {
+                                            var names = a.Split(',');
+                                            var nameL = names.Length;
+                                            var oa = new Author();
+                                            if (nameL > 2)
+                                            {
+                                                oa.Middle = names[2] ?? "";
+                                            }
+                                            if (nameL > 1)
+                                            {
+                                                oa.First = names[1] ?? "";
+                                            }
+                                            if (nameL > 0)
+                                            {
+                                                oa.Last = names[0] ?? "";
+                                            }
+                                            o.author.Add(oa);
+                                        }
+                                    }
+                                    var genres = mas[1].Split(':');
+                                    foreach (var g in genres)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(g))
+                                            o.genre.Add(g);
+                                    }
+                                    o.title = mas[2];
+                                    o.series = mas[3];
+                                    if (int.TryParse(mas[4], out int serno))
+                                        o.serno = serno;
+                                    o.file = mas[5];
+                                    if (int.TryParse(mas[6], out int size))
+                                        o.size = size;
+                                    o.libid = mas[7];
+                                    if (int.TryParse(mas[8], out int del))
+                                        o.del = del;
+                                    else
+                                        o.del = 0;
+                                    o.ext = mas[9];
+                                    o.date = mas[10];
+                                    o.lang = mas[11];
+                                    o.keywords = mas[12];
+                                    o.bookid = InsertBook(o);
+                                    rt.Add(o);
+                                }
                             }
                         }
                     }
                 }
             }
-            raw.sqlite3_close_v2(db);
-            Console.ReadKey();
+            return rt;
+        }
+
+        private static int InsertBook(Books o)
+        {
+            sqlite3_stmt stmt = null;
+            string cSql = "INSERT INTO Books " +
+                "(LibID, Title, SeqNumber, UpdateDate, Lang, Folder, FileName, Ext, BookSize, IsDeleted, KeyWords) " +
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+            if (raw.sqlite3_prepare_v2(db, cSql, out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            raw.sqlite3_bind_text(stmt, 1, o.libid);
+            raw.sqlite3_bind_text(stmt, 2, o.title);
+            if (o.serno.HasValue)
+                raw.sqlite3_bind_int(stmt, 3, o.serno.Value);
+            else
+                raw.sqlite3_bind_null(stmt, 3);
+            raw.sqlite3_bind_text(stmt, 4, o.date);
+            raw.sqlite3_bind_text(stmt, 5, o.lang);
+            raw.sqlite3_bind_text(stmt, 6, o.fol);
+            raw.sqlite3_bind_text(stmt, 3, FB2Code);
+            raw.sqlite3_bind_text(stmt, 4, GenreAlias);
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            raw.sqlite3_finalize(stmt);
         }
 
         private static void InsertGenres()
         {
             sqlite3_stmt stmt = null;
-            string cSql = "INSERT GenreCode, ParentCode, FB2Code, GenreAlias INTO Genres VALUES (?,?,?,?)";
+            string cSql = "INSERT INTO Genres (GenreCode, ParentCode, FB2Code, GenreAlias) VALUES (?,?,?,?)";
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("inpxscan.genres_fb2.glst"))
             {
                 using (var sr = new StreamReader(stream, Encoding.UTF8))
@@ -103,7 +174,7 @@ namespace inpxscan
                     string GenreCode, ParentCode, FB2Code, GenreAlias;
                     while ((s = sr.ReadLine()) != null)
                     {
-                        if (s == "") continue;
+                        if (string.IsNullOrEmpty(s)) continue;
                         if (s[0] == '#') continue;
                         if ((ind = s.IndexOf(' ')) > 0)
                         {
@@ -120,7 +191,14 @@ namespace inpxscan
                                 ind3 = s.IndexOf(';');
                                 if (ind3 < 0)
                                 {
-
+                                    FB2Code = "";
+                                    GenreAlias = s.Substring(ind + 1);
+                                }
+                                else
+                                {
+                                    var mas = s.Substring(ind + 1).Split(';');
+                                    FB2Code = mas[0];
+                                    GenreAlias = mas[1];
                                 }
                             }
 
@@ -132,7 +210,8 @@ namespace inpxscan
                             raw.sqlite3_bind_text(stmt, 2, ParentCode);
                             raw.sqlite3_bind_text(stmt, 3, FB2Code);
                             raw.sqlite3_bind_text(stmt, 4, GenreAlias);
-                            if (raw.sqlite3_step(stmt) != raw.SQLITE_ROW) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+                            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+                            raw.sqlite3_reset(stmt);
                         }
                         
                     }
