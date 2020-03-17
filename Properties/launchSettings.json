@@ -2,7 +2,7 @@
   "profiles": {
     "inpxscan": {
       "commandName": "Project",
-      "commandLineArgs": "c:\\temp\\qq.inpx"
+      "commandLineArgs": "c:\\temp\\qq.inpx c:\\temp"
     }
   }
 }

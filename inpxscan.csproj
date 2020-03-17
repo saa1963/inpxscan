@@ -7,10 +7,12 @@
 
   <ItemGroup>
     <None Remove="CreateCollectionDB_SQLite.sql" />
+    <None Remove="genres_fb2.glst" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="CreateCollectionDB_SQLite.sql" />
+    <EmbeddedResource Include="genres_fb2.glst" />
   </ItemGroup>
 
   <ItemGroup>
