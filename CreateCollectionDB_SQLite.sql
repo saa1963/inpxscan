@@ -210,38 +210,6 @@ CREATE INDEX IXBooks_SearchKeyWords ON Books (SearchKeyWords);
 CREATE INDEX IXBooks_SearchAnnotation ON Books (SearchAnnotation);
 --@@
 
-CREATE TRIGGER TRBooks_AI AFTER INSERT ON Books WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Books
-    SET
-      SearchTitle      = MHL_UPPER(NEW.Title),
-      SearchLang       = MHL_UPPER(NEW.Lang),
-      SearchFolder     = MHL_UPPER(NEW.Folder),
-      SearchFileName   = MHL_UPPER(NEW.FileName),
-      SearchExt        = MHL_UPPER(NEW.Ext),
-      SearchKeyWords   = MHL_UPPER(NEW.KeyWords),
-      SearchAnnotation = MHL_UPPER(NEW.Annotation)
-    WHERE
-      BookID = NEW.BookID;
-  END;
---@@
-
-CREATE TRIGGER TRBooks_AU AFTER UPDATE OF Title, Lang, Folder, FileName, Ext, KeyWords, Annotation ON Books WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Books
-    SET
-      SearchTitle      = MHL_UPPER(NEW.Title),
-      SearchLang       = MHL_UPPER(NEW.Lang),
-      SearchFolder     = MHL_UPPER(NEW.Folder),
-      SearchFileName   = MHL_UPPER(NEW.FileName),
-      SearchExt        = MHL_UPPER(NEW.Ext),
-      SearchKeyWords   = MHL_UPPER(NEW.KeyWords),
-      SearchAnnotation = MHL_UPPER(NEW.Annotation)
-    WHERE
-      BookID = NEW.BookID;
-  END;
---@@
-
 -- CREATE TRIGGER TRBooks_BD BEFORE DELETE ON Books
 --  BEGIN
 --    DELETE FROM Genre_List WHERE BookID = OLD.BookID;
@@ -251,15 +219,6 @@ CREATE TRIGGER TRBooks_AU AFTER UPDATE OF Title, Lang, Folder, FileName, Ext, Ke
 --  END;
 --@@
 
-CREATE TRIGGER TRBooks_BD BEFORE DELETE ON Books
-  BEGIN
-    DELETE FROM Genre_List WHERE BookID = OLD.BookID;
---	  DELETE FROM Authors WHERE AuthorID in (SELECT DISTINCT AuthorID FROM Author_List WHERE BookID = OLD.BookID);
-    DELETE FROM Author_List WHERE BookID = OLD.BookID;
-    DELETE FROM Series WHERE SeriesID IN (SELECT b.SeriesID FROM Books b WHERE  b.SeriesID = OLD.SeriesID GROUP BY b.SeriesID HAVING COUNT(b.SeriesID) <= 1);
-  END;
-
---@@
 
 CREATE TABLE Genre_List (
   GenreCode VARCHAR(20) NOT NULL COLLATE NOCASE,

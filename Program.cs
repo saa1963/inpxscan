@@ -47,6 +47,7 @@ namespace inpxscan
             raw.sqlite3_create_collation(db, "MHL_SYSTEM_NOCASE", null, mhl_system_nocase_collation);
             raw.sqlite3_create_function(db, "MHL_UPPER", 1, null, mhl_upper);
             raw.sqlite3_create_function(db, "MHL_LOWER", 1, null, mhl_lower);
+
             rc = raw.sqlite3_exec(db, scriptText);
             if (rc != raw.SQLITE_OK)
             {
@@ -54,16 +55,30 @@ namespace inpxscan
             }
 
             InsertGenres();
-            List<Books> lst = FillList(args[0]);
-            
+            rc = raw.sqlite3_exec(db, "BEGIN");
+            sqlite3_stmt stmt = null;
+            string cSql = "INSERT INTO Books " +
+                "(LibID, Title, SeqNumber, UpdateDate, Lang, Folder, FileName, Ext, BookSize, IsDeleted, KeyWords, " +
+                "SearchTitle, SearchLang, SearchFolder, SearchFileName, SearchExt, SearchKeyWords, SearchAnnotation, InsideNo) " +
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            if (raw.sqlite3_prepare_v2(db, cSql, out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            List<Books> lst = FillList(args[0], stmt);
+            Console.WriteLine($"Книг - {lst.Count}");
+            raw.sqlite3_finalize(stmt);
+            rc = raw.sqlite3_exec(db, "COMMIT");
+
             raw.sqlite3_close_v2(db);
 
             Console.WriteLine("Data had been loaded");
             Console.ReadKey();
         }
 
-        private static List<Books> FillList(string fname)
+        private static List<Books> FillList(string fname, sqlite3_stmt stmt)
         {
+            int insideno = 0;
             var rt = new List<Books>();
             using (var zipArchive = ZipFile.OpenRead(fname))
             {
@@ -125,7 +140,7 @@ namespace inpxscan
                                     o.date = mas[10];
                                     o.lang = mas[11];
                                     o.keywords = mas[12];
-                                    o.bookid = InsertBook(o);
+                                    o.bookid = InsertBook(o, entry.Name, insideno++, stmt);
                                     rt.Add(o);
                                 }
                             }
@@ -136,16 +151,8 @@ namespace inpxscan
             return rt;
         }
 
-        private static int InsertBook(Books o)
+        private static int InsertBook(Books o, string folder, int insideno, sqlite3_stmt stmt)
         {
-            sqlite3_stmt stmt = null;
-            string cSql = "INSERT INTO Books " +
-                "(LibID, Title, SeqNumber, UpdateDate, Lang, Folder, FileName, Ext, BookSize, IsDeleted, KeyWords) " +
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
-            if (raw.sqlite3_prepare_v2(db, cSql, out stmt) != raw.SQLITE_OK)
-            {
-                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
-            }
             raw.sqlite3_bind_text(stmt, 1, o.libid);
             raw.sqlite3_bind_text(stmt, 2, o.title);
             if (o.serno.HasValue)
@@ -154,11 +161,37 @@ namespace inpxscan
                 raw.sqlite3_bind_null(stmt, 3);
             raw.sqlite3_bind_text(stmt, 4, o.date);
             raw.sqlite3_bind_text(stmt, 5, o.lang);
-            raw.sqlite3_bind_text(stmt, 6, o.fol);
-            raw.sqlite3_bind_text(stmt, 3, FB2Code);
-            raw.sqlite3_bind_text(stmt, 4, GenreAlias);
-            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
-            raw.sqlite3_finalize(stmt);
+            folder = Path.GetFileNameWithoutExtension(folder) + ".zip";
+            raw.sqlite3_bind_text(stmt, 6, folder);
+            raw.sqlite3_bind_text(stmt, 7, o.file);
+            raw.sqlite3_bind_text(stmt, 8, "." + o.ext);
+            if (o.size.HasValue)
+                raw.sqlite3_bind_int(stmt, 9, o.size.Value);
+            else
+                raw.sqlite3_bind_null(stmt, 9);
+            raw.sqlite3_bind_int(stmt, 10, o.del);
+            raw.sqlite3_bind_text(stmt, 11, o.keywords);
+            raw.sqlite3_bind_text(stmt, 12, o.title.ToUpper());
+            raw.sqlite3_bind_text(stmt, 13, o.lang.ToUpper());
+            raw.sqlite3_bind_text(stmt, 14, folder.ToUpper());
+            raw.sqlite3_bind_text(stmt, 15, o.file.ToUpper());
+            raw.sqlite3_bind_text(stmt, 16, o.ext.ToUpper());
+            raw.sqlite3_bind_text(stmt, 17, o.keywords.ToUpper());
+            raw.sqlite3_bind_text(stmt, 18, "");
+            raw.sqlite3_bind_int(stmt, 19, insideno);
+
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) 
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            raw.sqlite3_reset(stmt);
+            if (raw.sqlite3_prepare_v2(db, "select seq from sqlite_sequence where name='Books'", out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_ROW)
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            var rt = raw.sqlite3_column_int(stmt, 0);
+            raw.sqlite3_reset(stmt);
+            return 1;
         }
 
         private static void InsertGenres()
