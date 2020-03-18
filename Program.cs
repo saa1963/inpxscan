@@ -11,8 +11,9 @@ namespace inpxscan
     class Program
     {
         private static sqlite3 db;
-        private static Dictionary<string, int> authors = new Dictionary<string, int>();
-        private static Dictionary<string, string> genres = new Dictionary<string, string>();
+        private static Dictionary<string, int> d_authors = new Dictionary<string, int>();
+        private static Dictionary<string, string> d_genres = new Dictionary<string, string>();
+        private static Dictionary<string, int> d_series = new Dictionary<string, int>();
         private static int new_genre = 9999;
         /// <summary>
         /// 
@@ -67,8 +68,8 @@ namespace inpxscan
             {
                 throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
             }
-            List<Books> lst = FillList(args[0], stmt);
-            Console.WriteLine($"Книг - {lst.Count}");
+            int booksCount = FillList(args[0], stmt);
+            Console.WriteLine($"Книг - {booksCount}");
             Console.WriteLine($"Необработанных жанров - {9999 - new_genre}");
             raw.sqlite3_finalize(stmt);
             rc = raw.sqlite3_exec(db, "COMMIT");
@@ -79,10 +80,10 @@ namespace inpxscan
             Console.ReadKey();
         }
 
-        private static List<Books> FillList(string fname, sqlite3_stmt stmt)
+        private static int FillList(string fname, sqlite3_stmt stmt)
         {
+            int booksCount = 0;
             int insideno = 0;
-            var rt = new List<Books>();
             using (var zipArchive = ZipFile.OpenRead(fname))
             {
                 foreach (var entry in zipArchive.Entries)
@@ -145,15 +146,66 @@ namespace inpxscan
                                     o.lang = mas[11];
                                     o.keywords = mas[12];
                                     o.bookid = InsertBook(o, entry.Name, insideno++, stmt);
-                                    rt.Add(o);
+                                    booksCount++;
                                     InsertGenreList(o.bookid, o.genre);
                                     InsertAuthorList(o.bookid, o.author);
+                                    if (!string.IsNullOrWhiteSpace(o.series))
+                                    {
+                                        int seriesid;
+                                        if (!d_series.ContainsKey(o.series.ToUpper()))
+                                        {
+                                            seriesid = InsertSeries(o.series);
+                                            d_series.Add(o.series.ToUpper(), seriesid);
+                                        }
+                                        else
+                                        {
+                                            seriesid = d_series[o.series.ToUpper()];
+                                        }
+                                        UpdateBook(o.bookid, seriesid);
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            return booksCount;
+        }
+
+        private static void UpdateBook(int bookid, int seriesid)
+        {
+            sqlite3_stmt stmt = null;
+            string cSql = "UPDATE Books Set SeriesID = ? WHERE bookid = ?";
+            if (raw.sqlite3_prepare_v2(db, cSql, out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            raw.sqlite3_bind_int(stmt, 1, seriesid);
+            raw.sqlite3_bind_int(stmt, 2, bookid);
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            raw.sqlite3_finalize(stmt);
+        }
+
+        private static int InsertSeries(string series)
+        {
+            sqlite3_stmt stmt = null;
+            string cSql = "INSERT INTO Series (SeriesTitle, SearchSeriesTitle) VALUES (?,?)";
+            if (raw.sqlite3_prepare_v2(db, cSql, out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            raw.sqlite3_bind_text(stmt, 1, series);
+            raw.sqlite3_bind_text(stmt, 2, series.ToUpper());
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE) throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            raw.sqlite3_reset(stmt);
+            if (raw.sqlite3_prepare_v2(db, "select seq from sqlite_sequence where name='Series'", out stmt) != raw.SQLITE_OK)
+            {
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            }
+            if (raw.sqlite3_step(stmt) != raw.SQLITE_ROW)
+                throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
+            var rt = raw.sqlite3_column_int(stmt, 0);
+            raw.sqlite3_finalize(stmt);
             return rt;
         }
 
@@ -167,14 +219,14 @@ namespace inpxscan
             }
             foreach (var a in author)
             {
-                if (!authors.ContainsKey(a.SearchName))
+                if (!d_authors.ContainsKey(a.SearchName))
                 {
                     int authorid = InsertAuthor(a.Last, a.First, a.Middle, a.SearchName);
                     raw.sqlite3_bind_int(stmt, 1, authorid);
-                    authors.Add(a.SearchName, authorid);
+                    d_authors.Add(a.SearchName, authorid);
                 }
                 else
-                    raw.sqlite3_bind_int(stmt, 1, authors[a.SearchName]);
+                    raw.sqlite3_bind_int(stmt, 1, d_authors[a.SearchName]);
                 raw.sqlite3_bind_int(stmt, 2, bookid);
                 if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE)
                     throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
@@ -218,14 +270,14 @@ namespace inpxscan
             }
             foreach (var g in genre)
             {
-                if (!genres.ContainsKey(g))
+                if (!d_genres.ContainsKey(g))
                 {
                     InsertGenre(new_genre--.ToString(), "", g, "");
                     raw.sqlite3_bind_text(stmt, 1, (new_genre + 1).ToString());
-                    genres.Add(g, (new_genre + 1).ToString());
+                    d_genres.Add(g, (new_genre + 1).ToString());
                 }
                 else
-                    raw.sqlite3_bind_text(stmt, 1, genres[g]);
+                    raw.sqlite3_bind_text(stmt, 1, d_genres[g]);
                 raw.sqlite3_bind_int(stmt, 2, bookid);
                 if (raw.sqlite3_step(stmt) != raw.SQLITE_DONE)
                     throw new Exception(raw.sqlite3_errmsg(db).utf8_to_string());
@@ -337,9 +389,9 @@ namespace inpxscan
                             
                             if (!string.IsNullOrWhiteSpace(FB2Code))
                             {
-                                if (!genres.ContainsKey(FB2Code))
+                                if (!d_genres.ContainsKey(FB2Code))
                                 {
-                                    genres.Add(FB2Code, GenreCode);
+                                    d_genres.Add(FB2Code, GenreCode);
                                 }
                             }
                         }
