@@ -21,27 +21,6 @@ PRAGMA page_size = 16384;
 PRAGMA journal_mode = OFF;
 --@@
 
-DROP TABLE IF EXISTS Settings;
---@@
-
-DROP TABLE IF EXISTS Series;
---@@
-
-DROP TABLE IF EXISTS Genres;
---@@
-
-DROP TABLE IF EXISTS Authors;
---@@
-
-DROP TABLE IF EXISTS Books;
---@@
-
-DROP TABLE IF EXISTS Genre_List;
---@@
-
-DROP TABLE IF EXISTS Author_List;
---@@
-
 CREATE TABLE Settings (
   SettingID    INTEGER NOT NULL PRIMARY KEY,
   SettingValue BLOB
@@ -59,22 +38,6 @@ CREATE INDEX IXSeries_Title ON Series (SeriesTitle);
 --@@
 
 CREATE INDEX IXSeries_SearchSeriesTitle ON Series (SearchSeriesTitle);
---@@
-
-CREATE TRIGGER TRSeries_AI AFTER INSERT ON Series WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Series
-    SET SearchSeriesTitle = MHL_UPPER(NEW.SeriesTitle)
-    WHERE SeriesID = NEW.SeriesID;
-  END;
---@@
-
-CREATE TRIGGER TRSeries_AU AFTER UPDATE ON Series WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Series
-    SET SearchSeriesTitle = MHL_UPPER(NEW.SeriesTitle)
-    WHERE SeriesID = NEW.SeriesID;
-  END;
 --@@
 
 CREATE TABLE Genres (
@@ -107,22 +70,6 @@ CREATE INDEX IXAuthors_FullName ON Authors (LastName, FirstName, MiddleName);
 --@@
 
 CREATE INDEX IXAuthors_SearchName ON Authors (SearchName);
---@@
-
-CREATE TRIGGER TRAuthors_AI AFTER INSERT ON Authors WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Authors
-    SET SearchName = MHL_FULLNAME(NEW.LastName, NEW.FirstName, NEW.MiddleName, 1)
-    WHERE AuthorID = NEW.AuthorID ;
-  END;
---@@
-
-CREATE TRIGGER TRAuthors_AU AFTER UPDATE ON Authors WHEN MHL_TRIGGERS_ON()
-  BEGIN
-    UPDATE Authors
-    SET SearchName = MHL_FULLNAME(NEW.LastName, NEW.FirstName, NEW.MiddleName, 1)
-    WHERE AuthorID = NEW.AuthorID ;
-  END;
 --@@
 
 CREATE TABLE Books (
@@ -209,16 +156,6 @@ CREATE INDEX IXBooks_SearchKeyWords ON Books (SearchKeyWords);
 
 CREATE INDEX IXBooks_SearchAnnotation ON Books (SearchAnnotation);
 --@@
-
--- CREATE TRIGGER TRBooks_BD BEFORE DELETE ON Books
---  BEGIN
---    DELETE FROM Genre_List WHERE BookID = OLD.BookID;
---    DELETE FROM Author_List WHERE BookID = OLD.BookID;
---    DELETE FROM Series WHERE SeriesID IN (SELECT b.SeriesID FROM Books b WHERE  b.SeriesID = OLD.SeriesID GROUP BY b.SeriesID HAVING COUNT(b.SeriesID) <= 1);
---    DELETE FROM Authors WHERE NOT AuthorID in (SELECT DISTINCT al.AuthorID FROM Author_List al);
---  END;
---@@
-
 
 CREATE TABLE Genre_List (
   GenreCode VARCHAR(20) NOT NULL COLLATE NOCASE,
